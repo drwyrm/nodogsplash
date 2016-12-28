@@ -179,10 +179,11 @@ fw_refresh_client_list(void)
 					iptables_fw_access(AUTH_MAKE_DEAUTHENTICATED, cp1);
 				}
 				client_list_delete(cp1);
-			} else if (added_time +  (config->checkinterval * config->clientforceout) <= now) {
+			} else if (cp1->expire_time <= now) {
 				/* Forcing out user */
 				debug(LOG_NOTICE, "%s %s connected %d secs. kB in: %llu kB out: %llu",
 					  cp1->ip, cp1->mac, config->checkinterval * config->clientforceout,
+					  cp1->ip, cp1->mac, cp1->expire_time - cp1->added_time,
 					  cp1->counters.incoming/1000, cp1->counters.outgoing/1000);
 				if(cp1->fw_connection_state == FW_MARK_AUTHENTICATED) {
 					iptables_fw_access(AUTH_MAKE_DEAUTHENTICATED, cp1);

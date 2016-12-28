@@ -47,6 +47,7 @@ typedef struct	_t_client {
 	char	*token;			/**< @brief Client token */
 	unsigned int fw_connection_state; /**< @brief Connection state in the firewall */
 	time_t added_time;		/**< @brief Time client added to list */
+	time_t expire_time;
 	t_counters	counters;	/**< @brief Counters for input/output of
 				   the client. */
 	int attempts;                 /**< @brief Number of authentication attempts */

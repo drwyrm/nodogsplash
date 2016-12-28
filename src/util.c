@@ -537,6 +537,10 @@ get_status_text()
 		snprintf((buffer + len), (sizeof(buffer) - len), "  Active:  %s", timebuf);
 		len = strlen(buffer);
 
+		ctime_r(&(client->expire_time),timebuf);
+		snprintf((buffer + len), (sizeof(buffer) - len), "  Expires:  %s", timebuf);
+		len = strlen(buffer);
+
 		str = format_time(client->counters.last_updated - client->added_time);
 		snprintf((buffer + len), (sizeof(buffer) - len), "  Active duration: %s\n", str);
 		len = strlen(buffer);
@@ -680,6 +684,9 @@ get_clients_text(void)
 		snprintf((buffer + len), (sizeof(buffer) - len), "active=%lld\n", (long long) client->counters.last_updated);
 		len = strlen(buffer);
 
+		snprintf((buffer + len), (sizeof(buffer) - len), "expire=%lld\n", (long long) client->expire_time);
+		len = strlen(buffer);
+
 		snprintf((buffer + len), (sizeof(buffer) - len), "duration=%lu\n", now - client->added_time);
 		len = strlen(buffer);
 
@@ -753,6 +760,9 @@ get_clients_json(void)
 		len = strlen(buffer);
 
 		snprintf((buffer + len), (sizeof(buffer) - len), "\"active\":%lld,\n", (long long) client->counters.last_updated);
+		len = strlen(buffer);
+
+		snprintf((buffer + len), (sizeof(buffer) - len), "\"expire\":%lld,\n", (long long) client->expire_time);
 		len = strlen(buffer);
 
 		snprintf((buffer + len), (sizeof(buffer) - len), "\"duration\":%lu,\n", now - client->added_time);

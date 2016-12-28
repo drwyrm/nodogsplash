@@ -215,7 +215,7 @@ http_nodogsplash_first_contact(request *r)
 		debug(LOG_NOTICE, "Remote auth data: client [%s, %s] authenticated %d seconds",
 			  client->mac, client->ip, seconds);
 		http_nodogsplash_callback_action(r,authtarget,AUTH_MAKE_AUTHENTICATED);
-		client->added_time = time(NULL) - (config->checkinterval * config->clientforceout) + seconds;
+		client->expire_time = time(NULL) + seconds;
 		free(data);
 	} else {
 		/* Serve the splash page (or redirect to remote authenticator) */
@@ -383,7 +383,7 @@ http_nodogsplash_callback_auth(httpd *webserver, request *r)
 
 		free(data);
 		http_nodogsplash_callback_action(r,authtarget,AUTH_MAKE_AUTHENTICATED);
-		client->added_time = time(NULL) - (config->checkinterval * config->clientforceout) + seconds;
+		client->expire_time = time(NULL) + seconds;
 	} else if(http_nodogsplash_check_userpass(r,authtarget)) {
 		http_nodogsplash_callback_action (r,authtarget,AUTH_MAKE_AUTHENTICATED);
 	} else {
