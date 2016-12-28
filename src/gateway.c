@@ -57,7 +57,7 @@
 #include "http.h"
 #include "client_list.h"
 #include "ndsctl_thread.h"
-#include "httpd_handler.h"
+#include "httpd_thread.h"
 #include "util.h"
 
 
@@ -72,6 +72,14 @@ httpd * webserver = NULL;
 
 /* Time when nodogsplash started  */
 time_t started_time = 0;
+
+
+/* Avoid race condition of folloing variables */
+pthread_mutex_t httpd_mutex = PTHREAD_MUTEX_INITIALIZER;
+/* Total number of httpd request handling threads started */
+int created_httpd_threads;
+/* Number of current httpd request handling threads */
+int current_httpd_threads;
 
 
 /**@internal
@@ -211,12 +219,14 @@ main_loop(void)
 {
 	int result;
 	pthread_t	tid;
-	s_config *config = config_get_config();
 	struct timespec wait_time;
 	int msec;
+	s_config *config;
 	request *r;
 	void **params;
 	int* thread_serial_num_p;
+
+	config = config_get_config();
 
 	/* Set the time when nodogsplash started */
 	if (!started_time) {
@@ -234,11 +244,15 @@ main_loop(void)
 			debug(LOG_ERR, "Could not get IP address information of %s, exiting...", config->gw_interface);
 			exit(1);
 		}
-		debug(LOG_NOTICE, "Detected gateway %s at %s", config->gw_interface, config->gw_address);
 	}
+	if ((config->gw_mac = get_iface_mac(config->gw_interface)) == NULL) {
+		debug(LOG_ERR, "Could not get MAC address information of %s, exiting...", config->gw_interface);
+		exit(1);
+	}
+	debug(LOG_NOTICE, "Detected gateway %s at %s (%s)", config->gw_interface, config->gw_address, config->gw_mac);
 
 	/* Initializes the web server */
-	if ((webserver = httpdCreate(config->gw_address, config->gw_port)) == NULL) {
+	if ((webserver = httpdCreate(config->gw_address, config->gw_port, config->ip6)) == NULL) {
 		debug(LOG_ERR, "Could not create web server: %s", strerror(errno));
 		exit(1);
 	}
@@ -277,7 +291,7 @@ main_loop(void)
 	}
 
 	/* Start client statistics and timeout clean-up thread */
-	result = pthread_create(&tid_client_check, NULL, (void *)thread_client_timeout_check, NULL);
+	result = pthread_create(&tid_client_check, NULL, thread_client_timeout_check, NULL);
 	if (result != 0) {
 		debug(LOG_ERR, "FATAL: Failed to create thread_client_timeout_check - exiting");
 		termination_handler(0);
@@ -285,7 +299,7 @@ main_loop(void)
 	pthread_detach(tid_client_check);
 
 	/* Start control thread */
-	result = pthread_create(&tid, NULL, (void *)thread_ndsctl, (void *)safe_strdup(config->ndsctl_sock));
+	result = pthread_create(&tid, NULL, thread_ndsctl, (void *)safe_strdup(config->ndsctl_sock));
 	if (result != 0) {
 		debug(LOG_ERR, "FATAL: Failed to create thread_ndsctl - exiting");
 		termination_handler(0);
@@ -296,6 +310,8 @@ main_loop(void)
 	 * Enter the httpd request handling loop
 	 */
 	debug(LOG_NOTICE, "Waiting for connections");
+	created_httpd_threads = 0;
+	current_httpd_threads = 0;
 	while(1) {
 		r = httpdGetConnection(webserver, NULL);
 
@@ -313,8 +329,40 @@ main_loop(void)
 			debug(LOG_ERR, "FATAL: httpdGetConnection returned unexpected value %d, exiting.", webserver->lastError);
 			termination_handler(0);
 		} else if (r != NULL) {
-			/* We got a connection */
-			handle_http_request(webserver, r);
+			/*
+			 * We got a connection
+			 *
+			 * We create another thread to handle the request,
+			 * possibly sleeping first if there are too many already
+			 */
+			debug(LOG_DEBUG,"%d current httpd threads.", current_httpd_threads);
+			if(config->decongest_httpd_threads && current_httpd_threads >= config->httpd_thread_threshold) {
+				msec = current_httpd_threads * config->httpd_thread_delay_ms;
+				wait_time.tv_sec = msec / 1000;
+				wait_time.tv_nsec = (msec % 1000) * 1000000;
+				debug(LOG_INFO, "Httpd thread creation delayed %ld sec %ld nanosec for congestion.",
+					  wait_time.tv_sec, wait_time.tv_nsec);
+				nanosleep(&wait_time,NULL);
+			}
+			thread_serial_num_p = (int*) malloc(sizeof(int)); /* thread_httpd() must free */
+			pthread_mutex_lock(&httpd_mutex);
+			*thread_serial_num_p = created_httpd_threads;
+			created_httpd_threads++;
+			pthread_mutex_unlock(&httpd_mutex);
+			debug(LOG_INFO, "Creating httpd request thread %d for %s", *thread_serial_num_p, r->clientAddr);
+			/* The void**'s are a simulation of the normal C
+			 * function calling sequence. */
+			params = safe_malloc(3 * sizeof(void *)); /* thread_httpd() must free */
+			*params = webserver;
+			*(params + 1) = r;
+			*(params + 2) = thread_serial_num_p;
+
+			result = pthread_create(&tid, NULL, (void *)thread_httpd, (void *)params);
+			if (result != 0) {
+				debug(LOG_ERR, "FATAL: pthread_create failed to create httpd request thread - exiting...");
+				termination_handler(0);
+			}
+			pthread_detach(tid);
 		} else {
 			/* webserver->lastError should be 2 */
 			/* XXX We failed an ACL.... No handling because

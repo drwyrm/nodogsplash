@@ -4,8 +4,8 @@ Nodogsplash offers a simple way to provide restricted access to an internet
 connection. It is derived from the codebase of the Wifi Guard Dog project.
 Nodogsplash is released under the GNU General Public License.
 
-* Nodogsplash: http://kokoro.ucsd.edu/nodogsplash
-* OpenWrt: http://openwrt.org/
+* Mailing List: http://ml.ninux.org/mailman/listinfo/nodogsplash
+* Original Homepage: http://kokoro.ucsd.edu/nodogsplash
 * Wifidog: http://dev.wifidog.org/
 * GNU GPL: http://www.gnu.org/copyleft/gpl.html
 
@@ -48,10 +48,10 @@ need, though.
   install from the project website, copy it to /tmp/ on your OpenWrt router,
   and, in as root on the router, run:
 
-  ```ipkg install /tmp/nodogsplash*.ipk```
+  ```opkg install /tmp/nodogsplash*.ipk```
 
   (Note: to prevent installation of an older package, you may have to remove
-  references to remote package repositories in your ipkg.conf file)
+  references to remote package repositories in your /etc/opkg.conf file)
 * If the interface that you want nodogsplash to manage is not br-lan,
   edit /etc/nodogsplash/nodogsplash.conf and set GatewayInterface.
 * To start nodogsplash, run the following, or just reboot the router:
@@ -69,7 +69,7 @@ need, though.
 
 * To uninstall nodogsplash:
 
-    ```ipkg remove nodogsplash```
+    ```opkg remove nodogsplash```
 
 ##3. How nodogsplash works
 
@@ -148,7 +148,7 @@ In the configuration file, a FirewallRule has the form:
 where
 
 * *permission* is required and must be allow, block, drop, log, or ulog.
-* *protocol* is optional. If present must be tcp, udp, icmp, or all.
+* *protocol* is optional. If present, it must be tcp, udp, icmp, or all.
   Defaults to all.
 * port *portrange* is optional. If present, protocol must be tcp or udp.
   portrange can be a single integer port number, or a colon-separated port
@@ -182,12 +182,20 @@ replaced by their values:
 
 ```
 <form method='GET' action='$authaction'>
-
-      <input type='hidden' name='tok' value='$tok'>
-      <input type='hidden' name='redir' value='$redir'>
-      <input type='submit' value='Click Here to Enter'>
-      </form>
+  <input type='hidden' name='tok' value='$tok'>
+  <input type='hidden' name='redir' value='$redir'>
+  <input type='submit' value='Click Here to Enter'>
+</form>
 ```
+
+* *$clientip*, *$clientmac* and *$gatewaymac* The respective addresses
+  of the client or gateway. This might be usefull in cases where the data
+  needs to be forwarded to some other place by the plash page itself.
+
+* *$nclients* and *$maxclients* User stats. Usefull when you need to
+  display something like "n of m users online" on the splash site.
+
+* *$uptime* The time Nodogsplash is running.
 
 * To change the appearance of informational and error pages which may
   occasionally be served by nodogsplash, edit the infoskel file:

@@ -50,6 +50,7 @@
 #include "client_list.h"
 #include "fw_iptables.h"
 #include "firewall.h"
+#include "gateway.h"
 
 #include "ndsctl_thread.h"
 
@@ -60,6 +61,7 @@ extern	pthread_mutex_t	config_mutex;
 static void *thread_ndsctl_handler(void *);
 static void ndsctl_status(int);
 static void ndsctl_clients(int);
+static void ndsctl_json(int);
 static void ndsctl_stop(int);
 static void ndsctl_block(int, char *);
 static void ndsctl_unblock(int, char *);
@@ -77,7 +79,7 @@ static void ndsctl_username(int, char *);
 @param arg Must contain a pointer to a string containing the Unix domain socket to open
 @todo This thread loops infinitely, need a watchdog to verify that it is still running?
 */
-void
+void*
 thread_ndsctl(void *arg)
 {
 	int	sock,    fd;
@@ -98,7 +100,6 @@ thread_ndsctl(void *arg)
 		debug(LOG_ERR, "NDSCTL socket name too long");
 		exit(1);
 	}
-
 
 	debug(LOG_DEBUG, "Creating socket");
 	sock = socket(PF_UNIX, SOCK_STREAM, 0);
@@ -147,18 +148,17 @@ thread_ndsctl(void *arg)
 			pthread_detach(tid);
 		}
 	}
+
+	return NULL;
 }
 
 
 static void *
 thread_ndsctl_handler(void *arg)
 {
-	int	fd,
-		done,
-		i;
-	char	request[MAX_BUF];
-	ssize_t	read_bytes,
-			len;
+	int fd, done, i;
+	char request[MAX_BUF];
+	ssize_t read_bytes, len;
 
 	debug(LOG_DEBUG, "Entering thread_ndsctl_handler....");
 
@@ -173,8 +173,7 @@ thread_ndsctl_handler(void *arg)
 
 	/* Read.... */
 	while (!done && read_bytes < (sizeof(request) - 1)) {
-		len = read(fd, request + read_bytes,
-				   sizeof(request) - read_bytes);
+		len = read(fd, request + read_bytes, sizeof(request) - read_bytes);
 
 		/* Have we gotten a command yet? */
 		for (i = read_bytes; i < (read_bytes + len); i++) {
@@ -194,6 +193,8 @@ thread_ndsctl_handler(void *arg)
 		ndsctl_status(fd);
 	} else if (strncmp(request, "clients", 7) == 0) {
 		ndsctl_clients(fd);
+	} else if (strncmp(request, "json", 4) == 0) {
+		ndsctl_json(fd);
 	} else if (strncmp(request, "stop", 4) == 0) {
 		ndsctl_stop(fd);
 	} else if (strncmp(request, "block", 5) == 0) {
@@ -239,7 +240,7 @@ thread_ndsctl_handler(void *arg)
 static void
 ndsctl_status(int fd)
 {
-	char * status = NULL;
+	char *status = NULL;
 	int len = 0;
 
 	status = get_status_text();
@@ -257,6 +258,20 @@ ndsctl_clients(int fd)
 	int len = 0;
 
 	status = get_clients_text();
+	len = strlen(status);
+
+	write(fd, status, len);
+
+	free(status);
+}
+
+static void
+ndsctl_json(int fd)
+{
+	char * status = NULL;
+	int len = 0;
+
+	status = get_clients_json();
 	len = strlen(status);
 
 	write(fd, status, len);
@@ -282,12 +297,15 @@ ndsctl_auth(int fd, char *arg)
 	debug(LOG_DEBUG, "Entering ndsctl_auth...");
 
 	LOCK_CLIENT_LIST();
-	/* arg should be IP address of client */
+	/* arg can be IP or MAC address of client */
 	debug(LOG_DEBUG, "Argument: %s (@%x)", arg, arg);
 
-	/* Add client to client list... */
-	if ((client = client_list_add_client(arg)) == NULL) {
-		debug(LOG_DEBUG, "Could not add client.");
+	/* We get the client or return... */
+	if ((client = client_list_find_by_ip(arg)) != NULL);
+	else if ((client = client_list_find_by_mac(arg)) != NULL);
+	else if ((client = client_list_find_by_token(arg)) != NULL);
+	else {
+		debug(LOG_DEBUG, "Client not found.");
 		UNLOCK_CLIENT_LIST();
 		write(fd, "No", 2);
 		return;
@@ -321,6 +339,7 @@ ndsctl_deauth(int fd, char *arg)
 	/* We get the client or return... */
 	if ((client = client_list_find_by_ip(arg)) != NULL);
 	else if ((client = client_list_find_by_mac(arg)) != NULL);
+	else if ((client = client_list_find_by_token(arg)) != NULL);
 	else {
 		debug(LOG_DEBUG, "Client not found.");
 		UNLOCK_CLIENT_LIST();
